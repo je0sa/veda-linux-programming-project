@@ -8,6 +8,11 @@
 #include <arpa/inet.h>
 #include <dlfcn.h>
 #include <pthread.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <signal.h>        
+#include <sys/resource.h>   
+#include <syslog.h>         
 
 #define PORT 60000
 #define BACKLOG 10
@@ -24,6 +29,7 @@ void *led_thread(void *);
 void *cds_thread(void *);
 void *seg_thread(void *);
 void *buz_thread(void *);
+void become_daemon(const char *);
 
 int main(int argc, char **argv)
 {
@@ -32,8 +38,10 @@ int main(int argc, char **argv)
     int sin_size;   
     pthread_t tid;
 
+    become_daemon(argv[0]);
+
     if((server_sock = socket(AF_INET,SOCK_STREAM,0)) == -1){
-        perror("socket");
+        syslog(LOG_ERR, "Socket Error");
         exit(1);
     }
 
@@ -46,38 +54,38 @@ int main(int argc, char **argv)
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     if(bind(server_sock, (struct sockaddr *)&server_addr, sizeof(struct sockaddr)) == -1){
-        perror("bind");
+        syslog(LOG_ERR, "Bind Error");
         exit(1);
     }
 
     if(listen(server_sock,BACKLOG) == -1){
-        perror("listen");
+        syslog(LOG_ERR, "Listen Error");
         exit(1);
     }
 
-    printf("[TCP Server] 라즈베리파이 원격 장치 제어 서버 가동 완료 (Port: %d)...\n", PORT);
+    syslog(LOG_INFO, "[TCP Server] Client 대기 모드");
 
         while(1){
             sin_size = sizeof(struct sockaddr_in);
-        if((client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &sin_size)) == -1){
-            perror("accept");
+            if((client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &sin_size)) == -1){
+            syslog(LOG_ERR, "accept Error");
             continue;
-        }
+        }   
 
-        printf("[Server Connect]: got connection from (IP: %s)\n",inet_ntoa(client_addr.sin_addr));
+        syslog(LOG_INFO, "[Client Connect] 우분투 원격 클라이언트 접속 성공.");
 
         // 멀티 클라이언트 대응 및 메인 프로세스 대기 차단을 위해 소켓 관리 스레드 생성
         int *client_sock_ptr = (int *)malloc(sizeof(int));
         *client_sock_ptr = client_sock;
 
         if (client_sock_ptr == NULL) {
-            perror("malloc");
+            syslog(LOG_ERR, "malloc Error");
             close(client_sock);
             continue;
         }
 
         if(pthread_create(&tid, NULL, client_handler, client_sock_ptr)!= 0){
-            perror("pcreate");
+            syslog(LOG_ERR, "pcreate Error");
             free(client_sock_ptr);
             close(client_sock);
             continue;
@@ -86,6 +94,7 @@ int main(int argc, char **argv)
 
     }
     close(server_sock);
+    closelog(); // 데몬 프로세스 탈출 시 로그 종료 세션 닫기
     return 0;
 }
 
@@ -100,13 +109,13 @@ void *client_handler(void *arg)
     while((str_len = recv(client_sock, buf, sizeof(buf)-1, 0)) > 0) {
         buf[str_len] = '\0';
         
-        printf("[Received Packet] 클라이언트 수신 데이터: %s\n", buf);
+        syslog(LOG_INFO, "[Packet Received] 수신 신호: %s", buf);
 
         // 데이터 파싱
         parse_and_execute(buf, client_sock);
     }
 
-    printf("[Disconnect] 우분투 클라이언트 접속 종료.\n");
+    syslog(LOG_INFO, "[Disconnect] 우분투 원격 클라이언트 접속 해제.");
     close(client_sock);
     return 0;
 }
@@ -151,7 +160,7 @@ void parse_and_execute(char *msg, int client_sock)
         pthread_detach(tid);
     }
     else if(strcmp(cmd, "EXIT") == 0) {
-        printf("[Server] 클라이언트가 원격 메뉴를 빠져나갔습니다.\n");
+        syslog(LOG_INFO, "[Server] 클라이언트가 원격 메뉴를 빠져나갔습니다.");
     }
 }
 
@@ -161,9 +170,9 @@ void *led_thread(void *arg)
     void (*ptr)(char*);
     char* error;
 
-    handle = dlopen("./libdevice.so", RTLD_LAZY | RTLD_NODELETE);
+    handle = dlopen("/home/jjhword/rpi_project/libdevice.so", RTLD_LAZY | RTLD_NODELETE);
     if (!handle) {
-        fprintf(stderr, "%s\n", dlerror());
+        syslog(LOG_ERR, "dlopen 실패: %s", dlerror());
         free(arg); 
         pthread_exit(NULL);
     }
@@ -172,7 +181,7 @@ void *led_thread(void *arg)
 
     error = dlerror();
     if (error != NULL) {
-        fprintf(stderr, "%s\n", error);
+        syslog(LOG_ERR, "dlopen 실패: %s", dlerror());
         free(arg);
         dlclose(handle);
         pthread_exit(NULL);
@@ -196,16 +205,16 @@ void *cds_thread(void *arg)
     void (*ptr)(int, int);
     char* error;
 
-    handle = dlopen("./libdevice.so", RTLD_LAZY | RTLD_NODELETE);
+    handle = dlopen("/home/jjhword/rpi_project/libdevice.so", RTLD_LAZY | RTLD_NODELETE);
     if (!handle) {
-        fprintf(stderr, "%s\n", dlerror());
+        syslog(LOG_ERR, "dlopen 실패: %s", dlerror());
         pthread_exit(NULL);
     }
 
     ptr = dlsym(handle, "cds_function");
     error = dlerror();
     if (error != NULL) {
-        fprintf(stderr, "%s\n", error);
+        syslog(LOG_ERR, "dlopen 실패: %s", dlerror());
         dlclose(handle);
         pthread_exit(NULL);
     }
@@ -221,9 +230,9 @@ void *seg_thread(void *arg)
     void (*ptr)(int);
     char* error;
 
-    handle = dlopen("./libdevice.so", RTLD_LAZY | RTLD_NODELETE);
+    handle = dlopen("/home/jjhword/rpi_project/libdevice.so", RTLD_LAZY | RTLD_NODELETE);
     if (!handle) {
-        fprintf(stderr, "%s\n", dlerror());
+        syslog(LOG_ERR, "dlopen 실패: %s", dlerror());
         free(arg);
         pthread_exit(NULL);
     }
@@ -231,7 +240,7 @@ void *seg_thread(void *arg)
     ptr = dlsym(handle, "seg_function");
     error = dlerror();
     if (error != NULL) {
-        fprintf(stderr, "%s\n", error);
+        syslog(LOG_ERR, "dlopen 실패: %s", dlerror());
         free(arg);
         dlclose(handle);
         pthread_exit(NULL);
@@ -250,9 +259,9 @@ void *buz_thread(void *arg)
     void (*ptr)(char*);
     char* error;
 
-    handle = dlopen("./libdevice.so", RTLD_LAZY | RTLD_NODELETE);
+    handle = dlopen("/home/jjhword/rpi_project/libdevice.so", RTLD_LAZY | RTLD_NODELETE);
     if (!handle) {
-        fprintf(stderr, "%s\n", dlerror());
+        syslog(LOG_ERR, "dlopen 실패: %s", dlerror());
         free(arg);
         pthread_exit(NULL);
     }
@@ -260,7 +269,7 @@ void *buz_thread(void *arg)
     ptr = dlsym(handle, "buz_function");
     error = dlerror();
     if (error != NULL) {
-        fprintf(stderr, "%s\n", error);
+        syslog(LOG_ERR, "dlopen 실패: %s", dlerror());
         free(arg);
         dlclose(handle);
         pthread_exit(NULL);
@@ -271,4 +280,67 @@ void *buz_thread(void *arg)
     free(arg); 
     dlclose(handle);
     pthread_exit(NULL);
+}
+
+void become_daemon(const char *cmd) 
+{
+    struct sigaction sa;
+    struct rlimit rl;
+    int fd0, fd1, fd2, i;
+    pid_t pid;
+
+    /* 1. 파일 생성을 위한 마스크를 0으로 설정 */
+    umask(0);
+
+    /* 2. 사용할 수 있는 최대의 파일 디스크립터 수 얻기 */
+    if (getrlimit(RLIMIT_NOFILE, &rl) < 0) {
+        perror("getlimit()");
+    }
+
+    /* 3. 첫 번째 fork() 수행 및 부모 프로세스 종료 */
+    if ((pid = fork()) < 0) {
+        perror("fork() error");
+        exit(1);
+    } else if (pid != 0) { 
+        exit(0); // 부모는 터미널을 반환하고 즉시 퇴장
+    }
+
+    /* 4. 터미널 제어권을 해제하기 위해 완전히 새로운 세션 세우기 */
+    setsid();
+
+    /* 5. 세션 리더 이탈 시 발생할 수 있는 SIGHUP 신호를 무시하도록 시스템 가드 지정 */
+    sa.sa_handler = SIG_IGN;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    if (sigaction(SIGHUP, &sa, NULL) < 0) {
+        perror("sigaction() : Can't ignore SIGHUP");
+    }
+
+    /* 6. 프로세스의 실행 워킹 경로를 루트(‘/’) 디렉토리로 안전하게 전환 */
+    if (chdir("/") < 0) {
+        perror("chdir()");
+    }
+
+    /* 7. 시스템이 쥐고 있던 모든 기존 파일 디스크립터를 깨끗하게 클로즈 (안정성 확보) */
+    if (rl.rlim_max == RLIM_INFINITY) {
+        rl.rlim_max = 1024;
+    }
+    for (i = 0; i < rl.rlim_max; i++) {
+        close(i);
+    }
+
+    /* 8. 표준 I/O(0, 1, 2) 장치를 커널 쓰레기통 파일인 /dev/null 리다이렉트 연결 */
+    fd0 = open("/dev/null", O_RDWR);
+    fd1 = dup(0);
+    fd2 = dup(0);
+
+    /* 9. 리눅스 시스템 메시지 로그 보관소 개설 */
+    openlog(cmd, LOG_CONS, LOG_DAEMON);
+    
+    if (fd0 != 0 || fd1 != 1 || fd2 != 2) {
+        syslog(LOG_ERR, "unexpected file descriptors %d %d %d", fd0, fd1, fd2);
+        exit(1);
+    }
+
+    syslog(LOG_INFO, "라즈베리파이 백그라운드 원격 제어 서버 데몬화 성공");
 }

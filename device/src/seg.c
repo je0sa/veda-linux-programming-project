@@ -36,4 +36,10 @@ void seg_function(int num)
 
         delay(1000); // 1초 대기
     }
-}
+
+    /* 에노드 방식 세그먼트 OFF */
+    for(int i = 0; i < 7; i++){ 
+        digitalWrite(pin_select[i], HIGH);
+        }
+    }
+    

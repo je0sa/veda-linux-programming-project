@@ -24,8 +24,9 @@ int main(int argc, char *argv[])
     struct sockaddr_in server_addr;
 
     sigset_t sigset;
-
-    int sigfillset(sigset_t *set); 
+    sigfillset(&sigset); // 모든 시그널을 블록
+    sigdelset(&sigset, SIGINT); 
+    sigprocmask(SIG_SETMASK, &sigset, NULL);
 
     if (argc != 2)
     {
