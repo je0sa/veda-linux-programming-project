@@ -1,8 +1,6 @@
 # 컴파일 결과물 및 빌드 파일 제외
-*.so
 *.o
-server_app
-client_app
+bin/
 
 # 임시 파일 및 로그 제외
 *.log

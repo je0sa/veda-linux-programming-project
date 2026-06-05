@@ -1,4 +1,3 @@
-# ./server/Makefile 수정본
 TARGET = ../bin/server
 CROSS = aarch64-linux-gnu-gcc
 

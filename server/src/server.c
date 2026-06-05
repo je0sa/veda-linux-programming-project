@@ -74,7 +74,6 @@ int main(int argc, char **argv)
 
         syslog(LOG_INFO, "[Client Connect] 우분투 원격 클라이언트 접속 성공.");
 
-        // 멀티 클라이언트 대응 및 메인 프로세스 대기 차단을 위해 소켓 관리 스레드 생성
         int *client_sock_ptr = (int *)malloc(sizeof(int));
         *client_sock_ptr = client_sock;
 
@@ -105,13 +104,13 @@ void *client_handler(void *arg)
     char buf[BUF_SIZE];
     int str_len;
 
-    // 클라이언트 소켓으로부터 데이터를 계속 수신
+    /* 클라이언트 소켓으로부터 데이터를 계속 수신 */
     while((str_len = recv(client_sock, buf, sizeof(buf)-1, 0)) > 0) {
         buf[str_len] = '\0';
         
         syslog(LOG_INFO, "[Packet Received] 수신 신호: %s", buf);
 
-        // 데이터 파싱
+        /* 데이터 파싱 */
         parse_and_execute(buf, client_sock);
     }
 
@@ -125,7 +124,7 @@ void parse_and_execute(char *msg, int client_sock)
     char cmd[20] = {0,};
     char arg[20] = {0,};
     
-    // 클라이언트가 보낸 "LED HIGH", "CDS 150" 등 문자열을 공백 기준으로 파싱함
+    /* 클라이언트가 보낸 "LED HIGH", "CDS 150" 등 문자열을 공백 기준으로 파싱 함 */
     sscanf(msg, "%s %s", cmd, arg);
 
     if(strcmp(cmd, "LED") == 0) {
@@ -170,7 +169,7 @@ void *led_thread(void *arg)
     void (*ptr)(char*);
     char* error;
 
-    handle = dlopen("/home/jjhword/rpi_project/libdevice.so", RTLD_LAZY | RTLD_NODELETE);
+    handle = dlopen("./libdevice.so", RTLD_LAZY | RTLD_NODELETE);
     if (!handle) {
         syslog(LOG_ERR, "dlopen 실패: %s", dlerror());
         free(arg); 
@@ -205,7 +204,7 @@ void *cds_thread(void *arg)
     void (*ptr)(int, int);
     char* error;
 
-    handle = dlopen("/home/jjhword/rpi_project/libdevice.so", RTLD_LAZY | RTLD_NODELETE);
+    handle = dlopen("./libdevice.so", RTLD_LAZY | RTLD_NODELETE);
     if (!handle) {
         syslog(LOG_ERR, "dlopen 실패: %s", dlerror());
         pthread_exit(NULL);
@@ -230,7 +229,7 @@ void *seg_thread(void *arg)
     void (*ptr)(int);
     char* error;
 
-    handle = dlopen("/home/jjhword/rpi_project/libdevice.so", RTLD_LAZY | RTLD_NODELETE);
+    handle = dlopen("./libdevice.so", RTLD_LAZY | RTLD_NODELETE);
     if (!handle) {
         syslog(LOG_ERR, "dlopen 실패: %s", dlerror());
         free(arg);
@@ -259,7 +258,7 @@ void *buz_thread(void *arg)
     void (*ptr)(char*);
     char* error;
 
-    handle = dlopen("/home/jjhword/rpi_project/libdevice.so", RTLD_LAZY | RTLD_NODELETE);
+    handle = dlopen("./libdevice.so", RTLD_LAZY | RTLD_NODELETE);
     if (!handle) {
         syslog(LOG_ERR, "dlopen 실패: %s", dlerror());
         free(arg);
@@ -314,11 +313,6 @@ void become_daemon(const char *cmd)
     sa.sa_flags = 0;
     if (sigaction(SIGHUP, &sa, NULL) < 0) {
         perror("sigaction() : Can't ignore SIGHUP");
-    }
-
-    /* 6. 프로세스의 실행 워킹 경로를 루트(‘/’) 디렉토리로 안전하게 전환 */
-    if (chdir("/") < 0) {
-        perror("chdir()");
     }
 
     /* 7. 시스템이 쥐고 있던 모든 기존 파일 디스크립터를 깨끗하게 클로즈 (안정성 확보) */

@@ -25,6 +25,6 @@ void led_function(char *arg)
     }
     else if(strcmp(arg, "OFF") == 0)
     {
-        softPwmWrite(LED, 0);
+        softPwmWrite(LED, 0);     // 0%
     }
 }
