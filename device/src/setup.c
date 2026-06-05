@@ -9,8 +9,10 @@
 
 int pin_select[7] = {21, 22, 23, 24, 25, 27, 28};
 
+/*[하드웨어 공통 초기화]*/ 
 void device_init()
 {   
+    /*중복 실행을 막기 위한 정적 플래그(is_global_init) 사용*/
     static int is_global_init = 0;
     if (is_global_init) return;
 

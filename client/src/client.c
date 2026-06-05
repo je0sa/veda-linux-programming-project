@@ -23,8 +23,9 @@ int main(int argc, char *argv[])
     struct hostent *he;
     struct sockaddr_in server_addr;
 
+    /*SIGINT(Ctrl+C)를 제외한 모든 시스템 시그널을 블록하여 프로그램 강제 종료 방지*/
     sigset_t sigset;
-    sigfillset(&sigset); // 모든 시그널을 블록
+    sigfillset(&sigset); 
     sigdelset(&sigset, SIGINT); 
     sigprocmask(SIG_SETMASK, &sigset, NULL);
 
@@ -33,11 +34,13 @@ int main(int argc, char *argv[])
         fprintf(stderr, "usage : client hostname \n");
         exit(1);
     }
+    /*호스트명(IP)을 확인해 구조체에 저장*/
     if ((he = gethostbyname(argv[1])) == NULL)
     {
         perror("gethostbyname");
         exit(1);
     }
+    /*TCP 통신용 IPv4 소켓 개설*/
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
         perror("socket");
@@ -48,6 +51,8 @@ int main(int argc, char *argv[])
     server_addr.sin_addr = *((struct in_addr *)he->h_addr);
     printf("[ %s ]\n", (char *)inet_ntoa(server_addr.sin_addr));
     memset(&(server_addr.sin_zero), '\0', 8);
+
+    /*라즈베리파이 서버로 연결 요청*/
     if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr)) == -1)
     {
         perror("connect");
@@ -65,31 +70,31 @@ void run(int sd)
     char buf[MAXSIZE];
     char packet[MAXSIZE]; 
     int numbytes;
-
-    fd_set fdset, fdset1;
+    fd_set fdset, fdset1;   // I/O 멀티플렉싱을 위한 파일 디스크립터 집합
 
     FD_ZERO(&fdset);
-    FD_SET(0, &fdset);
-    FD_SET(sd, &fdset);
+    FD_SET(0, &fdset);  // 표준 입력(키보드) 추가
+    FD_SET(sd, &fdset); // 서버 소켓 추가
     fdset1 = fdset;
     
-    while (1)
+    while (1)   
     {
         fdset = fdset1; // select 호출 후, 매번 백업본 복사
         printf("\ninput[1:LED][2:CDS][3:SEGMENT][4:BUZZER][5:EXIT(종료)]: ");
-        fflush(stdout); // 키보드 입력 버퍼를 비움
+        fflush(stdout); // \n이 없어도 즉시 프롬프트가 화면에 출력되도록 표준 출력 버퍼 강제 비움
         select(sd + 1, &fdset, NULL, NULL, NULL); // 타임아웃 설정 NULL: 이벤트 발생하기 전까지 Block한다는 의미
 
+        /*[입력 처리] 키보드 입력 이벤트가 발생한 경우*/
         if (FD_ISSET(0, &fdset))
         {
             int selectNum = 0;
 
             if (scanf("%d", &selectNum) != 1) {
-                while(getchar() != '\n'); // 버퍼 비우기
+                while(getchar() != '\n'); // 잘못된 입력 시 입력 버퍼 클리어
                 continue;
             }
 
-            memset(packet, 0, sizeof(packet));  // 패킷버퍼 초기화
+            memset(packet, 0, sizeof(packet));  // 패킷 버퍼 초기화
 
             if (selectNum == 1) // LED
             {
@@ -175,6 +180,7 @@ void run(int sd)
             }
 
         }
+        /*[수신 처리] 서버로부터 응답 패킷 이벤트가 발생한 경우*/
         else if (FD_ISSET(sd, &fdset))
         {
             memset(buf, 0, sizeof(buf));
